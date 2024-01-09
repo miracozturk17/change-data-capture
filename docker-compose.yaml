@@ -1,0 +1,112 @@
+version: '3.8'
+services:
+  spark:
+    container_name: spark
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: "2g"
+    image: pyspark + python IMAGE
+    ports:
+      - "8888:8888"
+      - "4041:4040"
+    networks:
+      - istanbul
+    volumes:
+      - ./project/spark_example:/opt/spark_example
+    command: sleep infinity
+  # MinIO
+  minio:
+    container_name: minio
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: "2g"
+    image: minio IMAGE
+    volumes:
+      - ./project/minio:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    networks:
+      - istanbul
+    environment:
+      MINIO_ACCESS_KEY: "istanbul"
+      MINIO_SECRET_KEY: "istanbul"
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-f",
+          "http://127.0.0.1:9000/minio/health/live"
+        ]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+  # ZOOKEEPER
+  zookeeper:
+    image: zookeeper IMAGE
+    ports:
+     - 2181:2181
+     - 2888:2888
+     - 3888:3888
+    networks:
+      - istanbul
+  # KAFKA
+  kafka:
+    container_name: kafka
+    image: kafka IMAGE
+    build:
+      context: ./kafka
+    ports:
+      - "9092:9092"
+      - "9091:9091"
+    networks:
+      - istanbul
+    volumes:
+      - ./kafka/config/server.properties:/kafka/config/server.properties
+    links:
+     - zookeeper
+    environment:
+     - ZOOKEEPER_CONNECT=zookeeper:2181
+  # POSTGRESQL
+  postgresql:
+    restart: always
+    image: postgres:15
+    container_name: postgresql
+    ports:
+      - "5432:5432"
+    networks:
+      - istanbul
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=1881
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+  # CONNECT
+  connect:
+    image: quay.io/debezium/connect:2.0
+    ports:
+     - 8083:8083
+    networks:
+      - istanbul
+    links:
+     - kafka
+     - postgresql
+    environment:
+     - BOOTSTRAP_SERVERS=kafka:9092
+     - GROUP_ID=1
+     - CONFIG_STORAGE_TOPIC=my_connect_configs
+     - OFFSET_STORAGE_TOPIC=my_connect_offsets
+     - STATUS_STORAGE_TOPIC=my_connect_statuses
+volumes:
+  postgres_data:
+  minio:
+    driver: local
+networks:
+  istanbul:
